@@ -51,10 +51,7 @@ function loadState() {
     connected: false,
     googleClientId: "",
     receiptSenders: "receipt@shopee.co.th\nno-reply@lazada.co.th\ntherapy@example.com",
-    transactions: [
-      { id: crypto.randomUUID(), type: "expense", amount: 126, currency: "ILS", label: "קפה וסידורים", date: new Date().toISOString() },
-      { id: crypto.randomUUID(), type: "income", amount: 500, currency: "ILS", label: "הכנסה", date: new Date().toISOString() },
-    ],
+    transactions: [],
     receipts: [],
     firstUse: new Date().toISOString(),
   };
@@ -157,6 +154,30 @@ function renderGmailSettings() {
     els.gmailStatus.textContent = "Client ID נשמר. לחץ חבר כדי לאשר גישה ל-Gmail.";
   } else {
     els.gmailStatus.textContent = "הכנס Client ID של Google, חבר Gmail, ואז סרוק את החודש הנוכחי.";
+  }
+}
+
+async function exportState() {
+  const backup = btoa(unescape(encodeURIComponent(JSON.stringify(state))));
+  try {
+    await navigator.clipboard.writeText(backup);
+    alert("הגיבוי הועתק. פתח את מודע ממסך הבית, לחץ ייבוא והדבק אותו.");
+  } catch {
+    prompt("העתק את הגיבוי הזה:", backup);
+  }
+}
+
+function importState() {
+  const backup = prompt("הדבק כאן את הגיבוי:");
+  if (!backup) return;
+  try {
+    const imported = JSON.parse(decodeURIComponent(escape(atob(backup.trim()))));
+    Object.assign(state, imported);
+    saveState();
+    render();
+    alert("הייבוא הושלם.");
+  } catch {
+    alert("הגיבוי לא תקין. נסה להעתיק אותו שוב.");
   }
 }
 
@@ -266,6 +287,10 @@ function monthRangeQuery() {
 function initGmailTokenClient() {
   if (!state.googleClientId) {
     els.gmailStatus.textContent = "חסר Google OAuth Client ID.";
+    return null;
+  }
+  if (state.googleClientId.includes("@") || !state.googleClientId.endsWith(".apps.googleusercontent.com")) {
+    els.gmailStatus.textContent = "בשדה Client ID צריך להדביק OAuth Client ID מ-Google Cloud, לא כתובת Gmail.";
     return null;
   }
   if (!window.google?.accounts?.oauth2) {
@@ -493,6 +518,8 @@ document.querySelector("#resetBtn").addEventListener("click", () => {
   localStorage.removeItem(storageKey);
   location.reload();
 });
+document.querySelector("#exportBtn").addEventListener("click", exportState);
+document.querySelector("#importBtn").addEventListener("click", importState);
 
 els.currencySelect.addEventListener("change", (event) => {
   state.currency = event.target.value;

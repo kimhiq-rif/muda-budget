@@ -10,7 +10,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icons/icon-180.png" />
-    <link rel="stylesheet" href="./styles.css?v=4" />
+    <link rel="stylesheet" href="./styles.css?v=5" />
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
@@ -78,7 +78,11 @@
         <section class="panel active" id="todayPanel">
           <div class="panel-header">
             <h2>פעולות אחרונות</h2>
-            <button class="text-button" id="resetBtn" type="button">איפוס דמו</button>
+            <button class="text-button" id="resetBtn" type="button">איפוס</button>
+          </div>
+          <div class="backup-actions">
+            <button class="text-button" id="exportBtn" type="button">גיבוי</button>
+            <button class="text-button" id="importBtn" type="button">ייבוא</button>
           </div>
           <ul class="transactions" id="transactionList"></ul>
         </section>
@@ -97,11 +101,11 @@
           </div>
           <div class="gmail-settings">
             <label>
-              <span>Google OAuth Client ID</span>
+              <span>Google OAuth Client ID - לא כתובת המייל שלך</span>
               <input id="googleClientId" type="text" dir="ltr" placeholder="1234567890-xxxx.apps.googleusercontent.com" />
             </label>
             <label>
-              <span>כתובות מייל של קבלות</span>
+              <span>כתובות שולחים של קבלות - כאן שמים Shopee, Lazada וכו׳</span>
               <textarea id="senderInput" rows="4" dir="ltr" placeholder="receipt@shopee.co.th&#10;no-reply@lazada.co.th&#10;therapy@example.com"></textarea>
             </label>
           </div>
@@ -150,6 +154,6 @@
       </div>
     </div>
 
-    <script src="./app.js?v=4"></script>
+    <script src="./app.js?v=5"></script>
   </body>
 </html>

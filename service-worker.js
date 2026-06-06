@@ -1,12 +1,12 @@
-const CACHE_NAME = "moda-budget-v4";
+const CACHE_NAME = "moda-budget-v5";
 const ASSETS = [
   "./",
-  "./index.html?v=4",
+  "./index.html?v=5",
   "./reset.html",
   "./styles.css",
-  "./styles.css?v=4",
+  "./styles.css?v=5",
   "./app.js",
-  "./app.js?v=4",
+  "./app.js?v=5",
   "./manifest.webmanifest",
   "./service-worker.js",
   "./icons/icon-180.png",

@@ -290,6 +290,12 @@ circle {
   color: white;
 }
 
+.backup-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .transactions,
 .receipts {
   list-style: none;
