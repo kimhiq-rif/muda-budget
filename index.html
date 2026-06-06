@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>מודע - מעקב הוצאות חכם</title>
+    <meta name="theme-color" content="#153e67" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="מודע" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-180.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="phone" aria-label="אפליקציית מודע">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">מודע</p>
+            <h1>הוצאות בלי עייפות</h1>
+          </div>
+          <button class="icon-button" id="notifyBtn" type="button" aria-label="בדיקת תזכורת">
+            <span aria-hidden="true">!</span>
+          </button>
+        </header>
+
+        <section class="widget" aria-label="ווידג׳ט מעקב">
+          <div class="widget-top">
+            <div>
+              <p class="widget-label">החצי הנוכחי</p>
+              <strong id="periodTotal">0 ₪</strong>
+            </div>
+            <label class="currency-picker">
+              <span>מטבע</span>
+              <select id="currencySelect" aria-label="בחירת מטבע">
+                <option value="ILS">₪ שקל</option>
+                <option value="THB">฿ באט</option>
+                <option value="USD">$ דולר</option>
+                <option value="EUR">€ יורו</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="progress-wrap" aria-label="ניצול יעד">
+            <div class="progress-ring">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="ring-bg" cx="60" cy="60" r="50"></circle>
+                <circle class="ring-fill" id="ringFill" cx="60" cy="60" r="50"></circle>
+              </svg>
+              <span id="progressPercent">0%</span>
+            </div>
+            <div class="insight">
+              <p id="insightText">הזן הוצאה ראשונה כדי לקבל קצב יומי ברור.</p>
+              <small id="remainingText">היעד החצי-חודשי מוכן.</small>
+            </div>
+          </div>
+
+          <div class="quick-actions" aria-label="פעולות מהירות">
+            <button class="action income" id="incomeBtn" type="button">
+              <span>+</span>
+              הכנסה
+            </button>
+            <button class="action expense" id="expenseBtn" type="button">
+              <span>-</span>
+              הוצאה
+            </button>
+          </div>
+        </section>
+
+        <nav class="tabs" aria-label="ניווט">
+          <button class="tab active" type="button" data-tab="today">היום</button>
+          <button class="tab" type="button" data-tab="gmail">Gmail</button>
+          <button class="tab" type="button" data-tab="challenge">אתגר</button>
+        </nav>
+
+        <section class="panel active" id="todayPanel">
+          <div class="panel-header">
+            <h2>פעולות אחרונות</h2>
+            <button class="text-button" id="resetBtn" type="button">איפוס דמו</button>
+          </div>
+          <ul class="transactions" id="transactionList"></ul>
+        </section>
+
+        <section class="panel" id="gmailPanel">
+          <div class="panel-header">
+            <h2>קבלות לאישור</h2>
+            <button class="text-button" id="scanBtn" type="button">סרוק חודש</button>
+          </div>
+          <div class="gmail-connect">
+            <div>
+              <strong>חיבור Gmail</strong>
+              <p>בגרסה אמיתית הכפתור יפתח OAuth ויבקש הרשאת קריאה מצומצמת ככל האפשר.</p>
+            </div>
+            <button class="connect-button" id="connectBtn" type="button">חבר</button>
+          </div>
+          <ul class="receipts" id="receiptList"></ul>
+        </section>
+
+        <section class="panel" id="challengePanel">
+          <div class="challenge-card">
+            <p class="eyebrow">אתגר חצי-חודשי</p>
+            <h2 id="challengeTitle">חודש ראשון: רק מודעות</h2>
+            <p id="challengeText">בחודש הראשון האפליקציה אוספת דפוסים. אחרי חודש ייווצר יעד חיתוך של 30% ואז תוספת הדרגתית.</p>
+            <div class="challenge-grid">
+              <div>
+                <span>יעד</span>
+                <strong id="budgetText">2,400 ₪</strong>
+              </div>
+              <div>
+                <span>ימים שנותרו</span>
+                <strong id="daysText">0</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <dialog class="calculator" id="calcDialog" aria-label="מחשבון מהיר">
+      <form method="dialog" class="calc-box">
+        <div class="calc-header">
+          <strong id="calcTitle">הוצאה חדשה</strong>
+          <button class="icon-button small" value="cancel" type="submit" aria-label="סגירה">×</button>
+        </div>
+        <output class="calc-display" id="calcDisplay">0</output>
+        <div class="calc-grid" id="calcGrid"></div>
+        <button class="save-button" id="saveCalc" value="default" type="submit">הוסף</button>
+      </form>
+    </dialog>
+
+    <div class="push-overlay" id="pushOverlay" aria-hidden="true">
+      <div class="push-card">
+        <p class="eyebrow">תזכורת חצי-חודשית</p>
+        <h2>אי אפשר לפספס את זה</h2>
+        <p id="pushText">בדיקת מצב: כמה יצא, כמה נשאר, ומה הפעולה הקטנה הבאה.</p>
+        <input id="dismissSlider" type="range" min="0" max="100" value="0" aria-label="החלק לכיבוי" />
+        <span>החלק לכיבוי</span>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
