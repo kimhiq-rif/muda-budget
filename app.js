@@ -14,6 +14,8 @@ const seedReceipts = [
 const state = loadState();
 let calcMode = "expense";
 let calcValue = "";
+let gmailTokenClient = null;
+let gmailAccessToken = "";
 
 const els = {
   periodTotal: document.querySelector("#periodTotal"),
@@ -36,6 +38,9 @@ const els = {
   pushOverlay: document.querySelector("#pushOverlay"),
   dismissSlider: document.querySelector("#dismissSlider"),
   pushText: document.querySelector("#pushText"),
+  gmailStatus: document.querySelector("#gmailStatus"),
+  googleClientId: document.querySelector("#googleClientId"),
+  senderInput: document.querySelector("#senderInput"),
 };
 
 function loadState() {
@@ -45,6 +50,8 @@ function loadState() {
     currency: "ILS",
     budget: currencies.ILS.budget,
     connected: false,
+    googleClientId: "",
+    receiptSenders: "receipt@shopee.co.th\nno-reply@lazada.co.th\ntherapy@example.com",
     transactions: [
       { id: crypto.randomUUID(), type: "expense", amount: 126, currency: "ILS", label: "קפה וסידורים", date: new Date().toISOString() },
       { id: crypto.randomUUID(), type: "income", amount: 500, currency: "ILS", label: "הכנסה", date: new Date().toISOString() },
@@ -132,7 +139,16 @@ function render() {
   renderTransactions();
   renderReceipts();
   renderChallenge();
+  renderGmailSettings();
   saveState();
+}
+
+function renderGmailSettings() {
+  els.googleClientId.value = state.googleClientId || "";
+  els.senderInput.value = state.receiptSenders || "";
+  els.gmailStatus.textContent = state.connected
+    ? "Gmail מחובר. אפשר לסרוק את החודש הנוכחי."
+    : "הכנס Client ID של Google, חבר Gmail, ואז סרוק את החודש הנוכחי.";
 }
 
 function renderTransactions() {
@@ -226,6 +242,193 @@ function scanGmailDemo() {
   render();
 }
 
+function parseSenders() {
+  return (state.receiptSenders || "")
+    .split(/[\n,;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function monthRangeQuery() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const format = (date) => [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("/");
+  return `after:${format(start)} before:${format(end)}`;
+}
+
+function initGmailTokenClient() {
+  if (!state.googleClientId) {
+    els.gmailStatus.textContent = "חסר Google OAuth Client ID.";
+    return null;
+  }
+  if (!window.google?.accounts?.oauth2) {
+    els.gmailStatus.textContent = "ספריית Google עדיין נטענת. נסה שוב בעוד רגע.";
+    return null;
+  }
+  gmailTokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: state.googleClientId,
+    scope: "https://www.googleapis.com/auth/gmail.readonly",
+    callback: (response) => {
+      if (response.error) {
+        els.gmailStatus.textContent = `החיבור נכשל: ${response.error}`;
+        return;
+      }
+      gmailAccessToken = response.access_token;
+      state.connected = true;
+      els.gmailStatus.textContent = "Gmail מחובר. עכשיו אפשר לסרוק את החודש.";
+      render();
+    },
+  });
+  return gmailTokenClient;
+}
+
+function connectGmail() {
+  state.googleClientId = els.googleClientId.value.trim();
+  state.receiptSenders = els.senderInput.value.trim();
+  saveState();
+  const tokenClient = initGmailTokenClient();
+  if (!tokenClient) return;
+  tokenClient.requestAccessToken({ prompt: "consent" });
+}
+
+async function scanGmailReal() {
+  state.googleClientId = els.googleClientId.value.trim();
+  state.receiptSenders = els.senderInput.value.trim();
+  saveState();
+
+  if (!gmailAccessToken) {
+    const tokenClient = initGmailTokenClient();
+    if (!tokenClient) return;
+    els.gmailStatus.textContent = "צריך להתחבר ל-Gmail לפני סריקה.";
+    tokenClient.requestAccessToken({ prompt: "" });
+    return;
+  }
+
+  const senders = parseSenders();
+  if (!senders.length) {
+    els.gmailStatus.textContent = "צריך להזין לפחות כתובת מייל אחת של קבלות.";
+    return;
+  }
+
+  els.gmailStatus.textContent = "סורק את Gmail ומחפש קבלות מהחודש...";
+  document.querySelector("#scanBtn").disabled = true;
+
+  try {
+    const messages = await listReceiptMessages(senders);
+    const receipts = [];
+    for (const message of messages.slice(0, 20)) {
+      const full = await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}?format=full`);
+      const candidate = receiptFromMessage(full);
+      if (candidate) receipts.push(candidate);
+    }
+    state.receipts = receipts;
+    els.gmailStatus.textContent = receipts.length
+      ? `מצאתי ${receipts.length} הוצאות אפשריות. תאשר רק מה שנכון.`
+      : "לא מצאתי קבלות מתאימות בחודש הנוכחי.";
+    render();
+  } catch (error) {
+    els.gmailStatus.textContent = `סריקת Gmail נכשלה: ${error.message}`;
+  } finally {
+    document.querySelector("#scanBtn").disabled = false;
+  }
+}
+
+async function listReceiptMessages(senders) {
+  const seen = new Map();
+  for (const sender of senders) {
+    const q = `${monthRangeQuery()} from:${sender}`;
+    const url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=10&q=${encodeURIComponent(q)}`;
+    const result = await gmailFetch(url);
+    (result.messages || []).forEach((message) => seen.set(message.id, message));
+  }
+  return [...seen.values()];
+}
+
+async function gmailFetch(url) {
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${gmailAccessToken}`,
+    },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || response.statusText);
+  }
+  return response.json();
+}
+
+function receiptFromMessage(message) {
+  const headers = Object.fromEntries((message.payload?.headers || []).map((header) => [header.name.toLowerCase(), header.value]));
+  const sender = headers.from || "Gmail";
+  const subject = headers.subject || "קבלה";
+  const date = headers.date ? new Date(headers.date) : new Date(Number(message.internalDate || Date.now()));
+  const body = `${subject}\n${extractMessageText(message.payload)}`;
+  const parsed = parseReceiptAmount(body);
+  if (!parsed) return null;
+  return {
+    id: crypto.randomUUID(),
+    source: merchantName(sender, subject),
+    sender,
+    amount: parsed.amount,
+    currency: parsed.currency,
+    date: date.toISOString(),
+  };
+}
+
+function extractMessageText(part) {
+  if (!part) return "";
+  const chunks = [];
+  if (part.body?.data) chunks.push(decodeBase64Url(part.body.data));
+  (part.parts || []).forEach((child) => chunks.push(extractMessageText(child)));
+  return chunks.join("\n").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+}
+
+function decodeBase64Url(value) {
+  try {
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(normalized);
+    return decodeURIComponent([...binary].map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""));
+  } catch {
+    return "";
+  }
+}
+
+function parseReceiptAmount(text) {
+  const currency = detectCurrency(text);
+  const patterns = [
+    /(?:total|amount|paid|payment|order total|grand total|סה"כ|סכום|שולם)[^\d]{0,28}([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
+    /(?:₪|฿|\$|€)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/,
+    /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:₪|฿|USD|EUR|THB|ILS)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    const amount = Number(match[1].replace(/,/g, ""));
+    if (amount > 0) return { amount, currency };
+  }
+  return null;
+}
+
+function detectCurrency(text) {
+  if (/฿|THB|baht/i.test(text)) return "THB";
+  if (/€|EUR/i.test(text)) return "EUR";
+  if (/\$|USD/i.test(text)) return "USD";
+  return "ILS";
+}
+
+function merchantName(sender, subject) {
+  const value = `${sender} ${subject}`;
+  if (/shopee/i.test(value)) return "Shopee";
+  if (/lazada/i.test(value)) return "Lazada";
+  if (/therapy|טיפול|מטפל|מטפלת/i.test(value)) return "טיפול רגשי";
+  return sender.split("<")[0].trim() || "קבלה";
+}
+
 function approveReceipt(id) {
   const receipt = state.receipts.find((item) => item.id === id);
   if (!receipt) return;
@@ -273,8 +476,8 @@ function showPushDemo() {
 
 document.querySelector("#incomeBtn").addEventListener("click", () => openCalc("income"));
 document.querySelector("#expenseBtn").addEventListener("click", () => openCalc("expense"));
-document.querySelector("#scanBtn").addEventListener("click", scanGmailDemo);
-document.querySelector("#connectBtn").addEventListener("click", scanGmailDemo);
+document.querySelector("#scanBtn").addEventListener("click", scanGmailReal);
+document.querySelector("#connectBtn").addEventListener("click", connectGmail);
 document.querySelector("#notifyBtn").addEventListener("click", showPushDemo);
 document.querySelector("#resetBtn").addEventListener("click", () => {
   localStorage.removeItem("moda-budget-state");
@@ -285,6 +488,16 @@ els.currencySelect.addEventListener("change", (event) => {
   state.currency = event.target.value;
   state.budget = currencies[state.currency].budget;
   render();
+});
+
+els.googleClientId.addEventListener("change", () => {
+  state.googleClientId = els.googleClientId.value.trim();
+  saveState();
+});
+
+els.senderInput.addEventListener("change", () => {
+  state.receiptSenders = els.senderInput.value.trim();
+  saveState();
 });
 
 els.saveCalc.addEventListener("click", () => {

@@ -11,6 +11,7 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" href="./icons/icon-180.png" />
     <link rel="stylesheet" href="./styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -90,9 +91,19 @@
           <div class="gmail-connect">
             <div>
               <strong>חיבור Gmail</strong>
-              <p>בגרסה אמיתית הכפתור יפתח OAuth ויבקש הרשאת קריאה מצומצמת ככל האפשר.</p>
+              <p id="gmailStatus">הכנס Client ID של Google, חבר Gmail, ואז סרוק את החודש הנוכחי.</p>
             </div>
             <button class="connect-button" id="connectBtn" type="button">חבר</button>
+          </div>
+          <div class="gmail-settings">
+            <label>
+              <span>Google OAuth Client ID</span>
+              <input id="googleClientId" type="text" dir="ltr" placeholder="1234567890-xxxx.apps.googleusercontent.com" />
+            </label>
+            <label>
+              <span>כתובות מייל של קבלות</span>
+              <textarea id="senderInput" rows="4" dir="ltr" placeholder="receipt@shopee.co.th&#10;no-reply@lazada.co.th&#10;therapy@example.com"></textarea>
+            </label>
           </div>
           <ul class="receipts" id="receiptList"></ul>
         </section>

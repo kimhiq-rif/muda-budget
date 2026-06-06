@@ -34,6 +34,10 @@ input {
   font: inherit;
 }
 
+textarea {
+  font: inherit;
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
@@ -362,6 +366,33 @@ circle {
   justify-content: space-between;
   gap: 14px;
   align-items: center;
+}
+
+.gmail-settings {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.gmail-settings label {
+  display: grid;
+  gap: 6px;
+}
+
+.gmail-settings span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.gmail-settings input,
+.gmail-settings textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 11px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
 }
 
 .challenge-card p {

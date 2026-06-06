@@ -24,4 +24,30 @@
 
 הערת Gmail:
 
-באפליקציה אמיתית הכפתור "חבר" צריך לפתוח OAuth של Google, לקבל הרשאת Gmail מתאימה, להריץ חיפוש עם `q` לפי שולחים וטווח תאריכים, לשלוף הודעות, לזהות סכומים ותאריכים, ולהציג אותם לאישור לפני הכנסה לתקציב.
+חיבור Gmail באפליקציה הזו עובד דרך Google Identity Services בדפדפן ו-Gmail API.
+
+כדי להפעיל Gmail אמיתי:
+
+1. פתח Google Cloud Console.
+2. צור Project חדש.
+3. הפעל Gmail API.
+4. עבור ל-OAuth consent screen:
+   - App name: מודע
+   - User type: External
+   - הוסף את עצמך כ-Test user.
+   - הוסף Scope: `https://www.googleapis.com/auth/gmail.readonly`
+5. עבור ל-Credentials.
+6. צור OAuth Client ID מסוג Web application.
+7. תחת Authorized JavaScript origins הוסף את כתובת GitHub Pages שלך, למשל:
+   `https://kimhiq-rif.github.io`
+8. העתק את ה-Client ID.
+9. פתח את האפליקציה באייפון.
+10. בלשונית Gmail הדבק את ה-Client ID.
+11. הכנס כתובות מייל של קבלות, כל כתובת בשורה נפרדת.
+12. לחץ "חבר", אשר הרשאת Gmail, ואז לחץ "סרוק חודש".
+
+האפליקציה סורקת את החודש הנוכחי בלבד, לפי כתובות השולחים שהזנת, שולפת הודעות דרך Gmail API, מנסה לזהות סכום ומטבע, ואז מציגה לאישור. היא לא מוסיפה הוצאה בלי שתלחץ "כן".
+
+מגבלה חשובה:
+
+ה-scope של Gmail הוא רגיש/מוגבל. לשימוש אישי אפשר לעבוד במצב Testing עם המשתמש שלך כ-Test user. להפצה לאנשים נוספים צריך אימות OAuth של Google, מדיניות פרטיות, ולעיתים בדיקת אבטחה.
