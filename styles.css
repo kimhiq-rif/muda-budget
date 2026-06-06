@@ -241,7 +241,7 @@ circle {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin: 18px 0;
   padding: 6px;
@@ -297,7 +297,8 @@ circle {
 }
 
 .transactions,
-.receipts {
+.receipts,
+.photo-list {
   list-style: none;
   padding: 0;
   margin: 14px 0 0;
@@ -307,6 +308,7 @@ circle {
 
 .transactions li,
 .receipts li,
+.photo-list li,
 .gmail-connect,
 .challenge-card {
   border: 1px solid var(--line);
@@ -316,24 +318,65 @@ circle {
 }
 
 .transactions li,
-.receipts li {
+.receipts li,
+.photo-list li {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
 }
 
+.transactions .transaction-divider {
+  display: block;
+  padding: 6px 2px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  box-shadow: none;
+}
+
 .transaction-meta,
-.receipt-meta {
+.receipt-meta,
+.photo-meta {
   display: grid;
   gap: 4px;
 }
 
 .transaction-meta span,
 .receipt-meta span,
+.photo-meta span,
 .gmail-connect p {
   color: var(--muted);
   font-size: 13px;
+}
+
+.archive-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.archive-form input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+}
+
+.photo-list button {
+  border: 0;
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .amount.expense-text {
@@ -433,6 +476,33 @@ circle {
   box-shadow: var(--shadow);
 }
 
+.photo-dialog {
+  border: 0;
+  border-radius: 24px;
+  padding: 0;
+  width: min(390px, calc(100vw - 24px));
+  box-shadow: var(--shadow);
+}
+
+.photo-dialog::backdrop {
+  background: rgba(16, 37, 63, 0.35);
+}
+
+.photo-viewer {
+  padding: 16px;
+  background: var(--surface);
+}
+
+.photo-viewer img {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  margin-top: 12px;
+  border-radius: 16px;
+  background: var(--blue-soft);
+}
+
 .calculator::backdrop {
   background: rgba(16, 37, 63, 0.35);
 }
@@ -490,6 +560,81 @@ circle {
   padding: 20px;
   background: rgba(16, 37, 63, 0.78);
   z-index: 10;
+}
+
+.report-overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: 20px;
+  background: rgba(16, 37, 63, 0.78);
+  z-index: 12;
+}
+
+.report-overlay.active {
+  display: grid;
+}
+
+.report-card {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 22px;
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.report-card h2 {
+  margin-bottom: 16px;
+  font-size: 24px;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.report-grid div {
+  padding: 13px;
+  border-radius: 14px;
+  background: var(--blue-soft);
+}
+
+.report-grid span,
+.report-section h3 {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.report-grid strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 18px;
+}
+
+.report-section {
+  margin: 18px 0;
+}
+
+.report-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.report-section li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .push-overlay.active {

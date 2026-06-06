@@ -6,6 +6,9 @@ const currencies = {
 };
 
 const storageKey = "moda-budget-state";
+const photoDbName = "moda-receipt-photos";
+const photoStoreName = "photos";
+const twoYearsMs = 730 * 24 * 60 * 60 * 1000;
 const gmailScope = "https://www.googleapis.com/auth/gmail.readonly";
 
 const state = loadState();
@@ -13,6 +16,7 @@ let calcMode = "expense";
 let calcValue = "";
 let gmailTokenClient = null;
 let gmailAccessToken = "";
+let photoDbPromise = null;
 
 const els = {
   periodTotal: document.querySelector("#periodTotal"),
@@ -40,6 +44,20 @@ const els = {
   senderInput: document.querySelector("#senderInput"),
   scanBtn: document.querySelector("#scanBtn"),
   connectBtn: document.querySelector("#connectBtn"),
+  photoPickBtn: document.querySelector("#photoPickBtn"),
+  receiptPhotoInput: document.querySelector("#receiptPhotoInput"),
+  receiptPhotoName: document.querySelector("#receiptPhotoName"),
+  receiptSearch: document.querySelector("#receiptSearch"),
+  photoList: document.querySelector("#photoList"),
+  photoDialog: document.querySelector("#photoDialog"),
+  photoTitle: document.querySelector("#photoTitle"),
+  photoPreview: document.querySelector("#photoPreview"),
+  photoCloseBtn: document.querySelector("#photoCloseBtn"),
+  reportOverlay: document.querySelector("#reportOverlay"),
+  reportTitle: document.querySelector("#reportTitle"),
+  reportGrid: document.querySelector("#reportGrid"),
+  reportSources: document.querySelector("#reportSources"),
+  reportAcknowledgeBtn: document.querySelector("#reportAcknowledgeBtn"),
 };
 
 function loadState() {
@@ -53,11 +71,18 @@ function loadState() {
     receiptSenders: "receipt@shopee.co.th\nno-reply@lazada.co.th\ntherapy@example.com",
     transactions: [],
     receipts: [],
+    processedGmailIds: [],
+    receiptPhotos: [],
+    duplicateBlocks: [],
+    lastReportAcknowledgedPeriod: "",
     firstUse: new Date().toISOString(),
   };
 }
 
 function saveState() {
+  state.processedGmailIds = state.processedGmailIds || [];
+  state.receiptPhotos = state.receiptPhotos || [];
+  state.duplicateBlocks = state.duplicateBlocks || [];
   localStorage.setItem(storageKey, JSON.stringify(state));
 }
 
@@ -77,6 +102,35 @@ function currentHalfMonth() {
     endDay,
     daysLeft: Math.max(0, endDay - day + 1),
   };
+}
+
+function halfPeriodFor(date) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+  const half = day <= 15 ? 1 : 2;
+  const startDay = half === 1 ? 1 : 16;
+  const endDay = half === 1 ? 15 : new Date(year, month + 1, 0).getDate();
+  const start = new Date(year, month, startDay, 0, 0, 0, 0);
+  const end = new Date(year, month, endDay, 23, 59, 59, 999);
+  return {
+    id: `${year}-${String(month + 1).padStart(2, "0")}-H${half}`,
+    label: `${start.toLocaleDateString("he-IL")} - ${end.toLocaleDateString("he-IL")}`,
+    start,
+    end,
+    half,
+  };
+}
+
+function previousHalfPeriod(period = halfPeriodFor(new Date())) {
+  const base = new Date(period.start);
+  base.setDate(base.getDate() - 1);
+  return halfPeriodFor(base);
+}
+
+function isInPeriod(dateValue, period) {
+  const time = new Date(dateValue).getTime();
+  return time >= period.start.getTime() && time <= period.end.getTime();
 }
 
 function periodExpenses() {
@@ -140,9 +194,53 @@ function render() {
 
   renderTransactions();
   renderReceipts();
+  renderPhotos();
   renderChallenge();
   renderGmailSettings();
   saveState();
+}
+
+function openPhotoDb() {
+  if (photoDbPromise) return photoDbPromise;
+  photoDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(photoDbName, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(photoStoreName);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return photoDbPromise;
+}
+
+async function savePhotoBlob(id, file) {
+  const db = await openPhotoDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(photoStoreName, "readwrite");
+    tx.objectStore(photoStoreName).put(file, id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function getPhotoBlob(id) {
+  const db = await openPhotoDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(photoStoreName, "readonly");
+    const request = tx.objectStore(photoStoreName).get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function deletePhotoBlob(id) {
+  const db = await openPhotoDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(photoStoreName, "readwrite");
+    tx.objectStore(photoStoreName).delete(id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 function renderGmailSettings() {
@@ -182,19 +280,31 @@ function importState() {
 }
 
 function renderTransactions() {
-  const items = state.transactions.slice(0, 7);
-  els.transactionList.innerHTML = items.length
-    ? items.map((tx) => `
+  const today = [];
+  const older = [];
+  state.transactions.slice(0, 24).forEach((tx) => {
+    const bucket = new Date(tx.date).toDateString() === new Date().toDateString() ? today : older;
+    bucket.push(tx);
+  });
+
+  const renderItem = (tx) => `
       <li>
         <div class="transaction-meta">
           <strong>${tx.label}</strong>
-          <span>${new Date(tx.date).toLocaleDateString("he-IL")}</span>
+          <span>${new Date(tx.date).toLocaleDateString("he-IL")}${tx.source === "gmail" ? " · Gmail" : ""}</span>
         </div>
         <strong class="amount ${tx.type === "expense" ? "expense-text" : "income-text"}">
           ${tx.type === "expense" ? "-" : "+"}${formatMoney(tx.amount, tx.currency)}
         </strong>
       </li>
-    `).join("")
+    `;
+
+  const sections = [];
+  if (today.length) sections.push(`<li class="transaction-divider">היום</li>${today.map(renderItem).join("")}`);
+  if (older.length) sections.push(`<li class="transaction-divider">לפני היום</li>${older.map(renderItem).join("")}`);
+
+  els.transactionList.innerHTML = sections.length
+    ? sections.join("")
     : `<li><div class="transaction-meta"><strong>אין פעולות עדיין</strong><span>לחץ על + או - כדי להתחיל.</span></div></li>`;
 }
 
@@ -212,7 +322,155 @@ function renderReceipts() {
         </div>
       </li>
     `).join("")
-    : `<li><div class="receipt-meta"><strong>אין קבלות שמחכות לאישור</strong><span>חבר Gmail ואז לחץ "סרוק חודש".</span></div></li>`;
+    : `<li><div class="receipt-meta"><strong>מנוע Gmail שקט</strong><span>לחץ "עדכן חודש" כדי לעדכן הוצאות. כפילויות מסוננות אוטומטית.</span></div></li>`;
+}
+
+function renderPhotos() {
+  cleanupOldPhotos();
+  const query = normalizeText(els.receiptSearch?.value || "");
+  const photos = (state.receiptPhotos || [])
+    .filter((photo) => !query || normalizeText(photo.name).includes(query))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  els.photoList.innerHTML = photos.length
+    ? photos.map((photo) => `
+      <li>
+        <div class="photo-meta">
+          <strong>${photo.name}</strong>
+          <span>${new Date(photo.createdAt).toLocaleDateString("he-IL")}</span>
+        </div>
+        <button type="button" data-photo="${photo.id}">פתח</button>
+      </li>
+    `).join("")
+    : `<li><div class="photo-meta"><strong>אין חשבוניות בארכיון</strong><span>צלם חשבונית ותן לה שם לחיפוש.</span></div></li>`;
+}
+
+function transactionsForPeriod(period) {
+  return state.transactions.filter((tx) => tx.type === "expense" && isInPeriod(tx.date, period));
+}
+
+function duplicateBlocksForPeriod(period) {
+  return (state.duplicateBlocks || []).filter((item) => isInPeriod(item.blockedAt, period));
+}
+
+function totalsByCurrency(transactions) {
+  return transactions.reduce((totals, tx) => {
+    totals[tx.currency] = (totals[tx.currency] || 0) + Number(tx.amount || 0);
+    return totals;
+  }, {});
+}
+
+function formatTotals(totals) {
+  const entries = Object.entries(totals);
+  if (!entries.length) return formatMoney(0);
+  return entries.map(([currency, amount]) => formatMoney(amount, currency)).join(" · ");
+}
+
+function reportForPeriod(period) {
+  const txs = transactionsForPeriod(period);
+  const previous = transactionsForPeriod(previousHalfPeriod(period));
+  const totals = totalsByCurrency(txs);
+  const previousTotal = previous
+    .filter((tx) => tx.currency === state.currency)
+    .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+  const currentMainTotal = totals[state.currency] || 0;
+  const delta = currentMainTotal - previousTotal;
+  const bySource = new Map();
+
+  txs.forEach((tx) => {
+    const key = `${tx.label}|${tx.currency}`;
+    const existing = bySource.get(key) || { label: tx.label, currency: tx.currency, amount: 0 };
+    existing.amount += Number(tx.amount || 0);
+    bySource.set(key, existing);
+  });
+
+  return {
+    period,
+    totals,
+    mainTotal: currentMainTotal,
+    delta,
+    overBudget: currentMainTotal - state.budget,
+    gmailCount: txs.filter((tx) => tx.source === "gmail").length,
+    manualCount: txs.filter((tx) => tx.source !== "gmail").length,
+    duplicateCount: duplicateBlocksForPeriod(period).length,
+    sources: [...bySource.values()].sort((a, b) => b.amount - a.amount).slice(0, 5),
+  };
+}
+
+function maybeShowDueReport() {
+  const period = previousHalfPeriod();
+  const firstUse = new Date(state.firstUse || Date.now());
+  if (firstUse > period.end) return;
+  if (state.lastReportAcknowledgedPeriod === period.id) return;
+  showReport(period);
+}
+
+function showReport(period = previousHalfPeriod()) {
+  const report = reportForPeriod(period);
+  els.reportOverlay.dataset.period = period.id;
+  els.reportTitle.textContent = period.label;
+  const overLabel = report.overBudget >= 0 ? "חריגה" : "מתחת ליעד";
+  const deltaLabel = report.delta >= 0 ? "לעומת החצי הקודם" : "לעומת החצי הקודם";
+  els.reportGrid.innerHTML = `
+    <div><span>הוצאות</span><strong>${formatTotals(report.totals)}</strong></div>
+    <div><span>יעד</span><strong>${formatMoney(state.budget)}</strong></div>
+    <div><span>${overLabel}</span><strong>${formatMoney(Math.abs(report.overBudget))}</strong></div>
+    <div><span>${deltaLabel}</span><strong>${report.delta >= 0 ? "+" : "-"}${formatMoney(Math.abs(report.delta))}</strong></div>
+    <div><span>נאספו מ-Gmail</span><strong>${report.gmailCount}</strong></div>
+    <div><span>נוספו ידנית</span><strong>${report.manualCount}</strong></div>
+    <div><span>כפילויות שנחסמו</span><strong>${report.duplicateCount}</strong></div>
+  `;
+  els.reportSources.innerHTML = report.sources.length
+    ? report.sources.map((source) => `<li><span>${source.label}</span><strong>${formatMoney(source.amount, source.currency)}</strong></li>`).join("")
+    : `<li><span>אין הוצאות בתקופה</span><strong>${formatMoney(0)}</strong></li>`;
+  els.reportOverlay.classList.add("active");
+  els.reportOverlay.setAttribute("aria-hidden", "false");
+}
+
+function acknowledgeReport() {
+  state.lastReportAcknowledgedPeriod = els.reportOverlay.dataset.period || previousHalfPeriod().id;
+  saveState();
+  els.reportOverlay.classList.remove("active");
+  els.reportOverlay.setAttribute("aria-hidden", "true");
+}
+
+async function addReceiptPhoto(file) {
+  if (!file) return;
+  const name = els.receiptPhotoName.value.trim() || `חשבונית ${new Date().toLocaleDateString("he-IL")}`;
+  const id = crypto.randomUUID();
+  await savePhotoBlob(id, file);
+  state.receiptPhotos = state.receiptPhotos || [];
+  state.receiptPhotos.unshift({
+    id,
+    name,
+    createdAt: new Date().toISOString(),
+    type: file.type || "image/jpeg",
+  });
+  els.receiptPhotoName.value = "";
+  saveState();
+  renderPhotos();
+}
+
+async function openReceiptPhoto(id) {
+  const meta = (state.receiptPhotos || []).find((photo) => photo.id === id);
+  const blob = await getPhotoBlob(id);
+  if (!meta || !blob) {
+    alert("התמונה לא נמצאה במכשיר הזה.");
+    return;
+  }
+  if (els.photoPreview.src) URL.revokeObjectURL(els.photoPreview.src);
+  els.photoTitle.textContent = meta.name;
+  els.photoPreview.src = URL.createObjectURL(blob);
+  els.photoDialog.showModal();
+}
+
+function cleanupOldPhotos() {
+  const cutoff = Date.now() - twoYearsMs;
+  const expired = (state.receiptPhotos || []).filter((photo) => new Date(photo.createdAt).getTime() < cutoff);
+  if (!expired.length) return;
+  state.receiptPhotos = state.receiptPhotos.filter((photo) => new Date(photo.createdAt).getTime() >= cutoff);
+  expired.forEach((photo) => deletePhotoBlob(photo.id));
+  saveState();
 }
 
 function renderChallenge() {
@@ -253,14 +511,17 @@ function pressCalc(key) {
   els.calcDisplay.textContent = calcValue || "0";
 }
 
-function addTransaction(type, amount, label = type === "expense" ? "הזנה מהירה" : "הכנסה") {
+function addTransaction(type, amount, label = type === "expense" ? "הזנה מהירה" : "הכנסה", options = {}) {
   state.transactions.unshift({
     id: crypto.randomUUID(),
     type,
     amount,
-    currency: state.currency,
+    currency: options.currency || state.currency,
     label,
-    date: new Date().toISOString(),
+    date: options.date || new Date().toISOString(),
+    source: options.source || "manual",
+    gmailMessageId: options.gmailMessageId || null,
+    fingerprint: options.fingerprint || null,
   });
   render();
 }
@@ -309,6 +570,7 @@ function initGmailTokenClient() {
       state.connected = true;
       saveState();
       els.gmailStatus.textContent = "Gmail מחובר. עכשיו אפשר לסרוק את החודש.";
+      scanGmailReal();
     },
   });
   return gmailTokenClient;
@@ -342,21 +604,30 @@ async function scanGmailReal() {
     return;
   }
 
-  els.gmailStatus.textContent = "סורק את Gmail ומחפש קבלות מהחודש...";
+  els.gmailStatus.textContent = "סורק את Gmail ומעדכן הוצאות...";
   els.scanBtn.disabled = true;
 
   try {
     const messages = await listReceiptMessages(senders);
-    const receipts = [];
+    const imported = [];
     for (const message of messages.slice(0, 25)) {
+      if (isGmailMessageProcessed(message.id)) continue;
       const full = await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}?format=full`);
       const candidate = receiptFromMessage(full);
-      if (candidate) receipts.push(candidate);
+      markGmailMessageProcessed(message.id);
+      if (candidate) {
+        if (isDuplicateTransaction(candidate)) {
+          recordDuplicateBlock(candidate);
+        } else {
+          addGmailTransaction(candidate);
+          imported.push(candidate);
+        }
+      }
     }
-    state.receipts = receipts;
-    els.gmailStatus.textContent = receipts.length
-      ? `מצאתי ${receipts.length} הוצאות אפשריות. תאשר רק מה שנכון.`
-      : "לא מצאתי קבלות מתאימות בחודש הנוכחי.";
+    state.receipts = [];
+    els.gmailStatus.textContent = imported.length
+      ? `נוספו ${imported.length} הוצאות מ-Gmail.`
+      : "אין הוצאות חדשות מ-Gmail.";
     render();
   } catch (error) {
     els.gmailStatus.textContent = `סריקת Gmail נכשלה: ${friendlyGmailError(error)}`;
@@ -373,6 +644,21 @@ async function listReceiptMessages(senders) {
     const result = await gmailFetch(url);
     (result.messages || []).forEach((message) => seen.set(message.id, message));
   }
+  const keywordQuery = `${monthRangeQuery()} (${[
+    "receipt",
+    "invoice",
+    "payment",
+    "paid",
+    "order",
+    "total",
+    "קבלה",
+    "חשבונית",
+    "תשלום",
+    "הזמנה",
+  ].map((word) => `"${word}"`).join(" OR ")})`;
+  const keywordUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20&q=${encodeURIComponent(keywordQuery)}`;
+  const keywordResult = await gmailFetch(keywordUrl);
+  (keywordResult.messages || []).forEach((message) => seen.set(message.id, message));
   return [...seen.values()];
 }
 
@@ -402,7 +688,66 @@ function receiptFromMessage(message) {
     amount: parsed.amount,
     currency: parsed.currency,
     date: date.toISOString(),
+    gmailMessageId: message.id,
+    fingerprint: receiptFingerprint(sender, parsed.amount, parsed.currency, date, subject),
   };
+}
+
+function addGmailTransaction(candidate) {
+  addTransaction("expense", candidate.amount, candidate.source, {
+    currency: candidate.currency,
+    date: candidate.date,
+    source: "gmail",
+    gmailMessageId: candidate.gmailMessageId,
+    fingerprint: candidate.fingerprint,
+  });
+}
+
+function isGmailMessageProcessed(messageId) {
+  return (state.processedGmailIds || []).includes(messageId) ||
+    state.transactions.some((tx) => tx.gmailMessageId === messageId);
+}
+
+function markGmailMessageProcessed(messageId) {
+  state.processedGmailIds = state.processedGmailIds || [];
+  if (!state.processedGmailIds.includes(messageId)) state.processedGmailIds.push(messageId);
+}
+
+function recordDuplicateBlock(candidate) {
+  state.duplicateBlocks = state.duplicateBlocks || [];
+  const key = candidate.gmailMessageId || candidate.fingerprint;
+  if (state.duplicateBlocks.some((item) => item.key === key)) return;
+  state.duplicateBlocks.push({
+    key,
+    blockedAt: new Date().toISOString(),
+    amount: candidate.amount,
+    currency: candidate.currency,
+    source: candidate.source,
+  });
+  saveState();
+}
+
+function isDuplicateTransaction(candidate) {
+  return state.transactions.some((tx) =>
+    tx.gmailMessageId === candidate.gmailMessageId ||
+    tx.fingerprint === candidate.fingerprint ||
+    (
+      tx.source === "gmail" &&
+      tx.currency === candidate.currency &&
+      Math.abs(Number(tx.amount) - Number(candidate.amount)) < 0.01 &&
+      Math.abs(new Date(tx.date).getTime() - new Date(candidate.date).getTime()) < 36 * 60 * 60 * 1000 &&
+      normalizeText(tx.label) === normalizeText(candidate.source)
+    )
+  );
+}
+
+function receiptFingerprint(sender, amount, currency, date, subject) {
+  const day = new Date(date).toISOString().slice(0, 10);
+  return [normalizeText(sender), normalizeText(subject).slice(0, 40), currency, Number(amount).toFixed(2), day].join("|");
+}
+
+function normalizeText(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function extractMessageText(part) {
@@ -513,13 +858,29 @@ document.querySelector("#incomeBtn").addEventListener("click", () => openCalc("i
 document.querySelector("#expenseBtn").addEventListener("click", () => openCalc("expense"));
 els.scanBtn.addEventListener("click", scanGmailReal);
 els.connectBtn.addEventListener("click", connectGmail);
-document.querySelector("#notifyBtn").addEventListener("click", showPushDemo);
+document.querySelector("#notifyBtn").addEventListener("click", () => showReport(previousHalfPeriod()));
+els.reportAcknowledgeBtn.addEventListener("click", acknowledgeReport);
 document.querySelector("#resetBtn").addEventListener("click", () => {
   localStorage.removeItem(storageKey);
   location.reload();
 });
 document.querySelector("#exportBtn").addEventListener("click", exportState);
 document.querySelector("#importBtn").addEventListener("click", importState);
+els.photoPickBtn.addEventListener("click", () => els.receiptPhotoInput.click());
+els.receiptPhotoInput.addEventListener("change", () => {
+  addReceiptPhoto(els.receiptPhotoInput.files?.[0]);
+  els.receiptPhotoInput.value = "";
+});
+els.receiptSearch.addEventListener("input", renderPhotos);
+els.photoList.addEventListener("click", (event) => {
+  const id = event.target.dataset.photo;
+  if (id) openReceiptPhoto(id);
+});
+els.photoCloseBtn.addEventListener("click", () => els.photoDialog.close());
+els.photoDialog.addEventListener("close", () => {
+  if (els.photoPreview.src) URL.revokeObjectURL(els.photoPreview.src);
+  els.photoPreview.removeAttribute("src");
+});
 
 els.currencySelect.addEventListener("change", (event) => {
   state.currency = event.target.value;
@@ -585,6 +946,7 @@ document.addEventListener("keydown", (event) => {
 
 buildCalculator();
 render();
+setTimeout(maybeShowDueReport, 350);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
