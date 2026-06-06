@@ -5,11 +5,8 @@ const currencies = {
   EUR: { symbol: "€", name: "יורו", budget: 850 },
 };
 
-const seedReceipts = [
-  { id: "r1", source: "Shopee", sender: "receipt@shopee.co.th", amount: 640, currency: "THB", date: "2026-06-03" },
-  { id: "r2", source: "Lazada", sender: "no-reply@lazada.co.th", amount: 1180, currency: "THB", date: "2026-06-05" },
-  { id: "r3", source: "טיפול רגשי", sender: "therapy@example.com", amount: 320, currency: "ILS", date: "2026-06-01" },
-];
+const storageKey = "moda-budget-state";
+const gmailScope = "https://www.googleapis.com/auth/gmail.readonly";
 
 const state = loadState();
 let calcMode = "expense";
@@ -41,10 +38,12 @@ const els = {
   gmailStatus: document.querySelector("#gmailStatus"),
   googleClientId: document.querySelector("#googleClientId"),
   senderInput: document.querySelector("#senderInput"),
+  scanBtn: document.querySelector("#scanBtn"),
+  connectBtn: document.querySelector("#connectBtn"),
 };
 
 function loadState() {
-  const saved = localStorage.getItem("moda-budget-state");
+  const saved = localStorage.getItem(storageKey);
   if (saved) return JSON.parse(saved);
   return {
     currency: "ILS",
@@ -62,12 +61,11 @@ function loadState() {
 }
 
 function saveState() {
-  localStorage.setItem("moda-budget-state", JSON.stringify(state));
+  localStorage.setItem(storageKey, JSON.stringify(state));
 }
 
 function formatMoney(amount, currency = state.currency) {
-  const symbol = currencies[currency].symbol;
-  return `${Number(amount).toLocaleString("he-IL")} ${symbol}`;
+  return `${Number(amount).toLocaleString("he-IL")} ${currencies[currency].symbol}`;
 }
 
 function currentHalfMonth() {
@@ -76,8 +74,12 @@ function currentHalfMonth() {
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const startDay = day <= 15 ? 1 : 16;
   const endDay = day <= 15 ? 15 : lastDay;
-  const daysLeft = Math.max(0, endDay - day + 1);
-  return { day, startDay, endDay, daysLeft };
+  return {
+    day,
+    startDay,
+    endDay,
+    daysLeft: Math.max(0, endDay - day + 1),
+  };
 }
 
 function periodExpenses() {
@@ -114,7 +116,8 @@ function render() {
   const { daysLeft, endDay, day } = currentHalfMonth();
   const budget = state.budget;
   const percent = Math.min(100, Math.round((spent / budget) * 100));
-  const dailyPace = Math.round(budget / Math.max(1, endDay - (day <= 15 ? 1 : 16) + 1));
+  const halfStart = day <= 15 ? 1 : 16;
+  const dailyPace = Math.round(budget / Math.max(1, endDay - halfStart + 1));
   const todayDelta = today - dailyPace;
   const remaining = Math.max(0, budget - spent);
   const circumference = 314;
@@ -134,7 +137,9 @@ function render() {
   } else {
     els.insightText.textContent = `היום הוצאת ${formatMoney(today)}. אתה בתוך הקצב.`;
   }
-  els.remainingText.textContent = `נשארו ${formatMoney(remaining)} ל-${daysLeft} ימים. ${remaining > 0 ? `אם תוציא פחות מ-${formatMoney(Math.round(remaining / Math.max(1, daysLeft)))} היום, אתה נשאר במסלול.` : "הגיע הזמן לעצור רגע ולבחור רק מה שחיוני."}`;
+
+  const recommendedToday = Math.round(remaining / Math.max(1, daysLeft));
+  els.remainingText.textContent = `נשארו ${formatMoney(remaining)} ל-${daysLeft} ימים. ${remaining > 0 ? `אם תוציא פחות מ-${formatMoney(recommendedToday)} היום, אתה נשאר במסלול.` : "הגיע הזמן לעצור רגע ולבחור רק מה שחיוני."}`;
 
   renderTransactions();
   renderReceipts();
@@ -146,9 +151,13 @@ function render() {
 function renderGmailSettings() {
   els.googleClientId.value = state.googleClientId || "";
   els.senderInput.value = state.receiptSenders || "";
-  els.gmailStatus.textContent = state.connected
-    ? "Gmail מחובר. אפשר לסרוק את החודש הנוכחי."
-    : "הכנס Client ID של Google, חבר Gmail, ואז סרוק את החודש הנוכחי.";
+  if (gmailAccessToken) {
+    els.gmailStatus.textContent = "Gmail מחובר. אפשר לסרוק את החודש הנוכחי.";
+  } else if (state.googleClientId) {
+    els.gmailStatus.textContent = "Client ID נשמר. לחץ חבר כדי לאשר גישה ל-Gmail.";
+  } else {
+    els.gmailStatus.textContent = "הכנס Client ID של Google, חבר Gmail, ואז סרוק את החודש הנוכחי.";
+  }
 }
 
 function renderTransactions() {
@@ -182,7 +191,7 @@ function renderReceipts() {
         </div>
       </li>
     `).join("")
-    : `<li><div class="receipt-meta"><strong>אין קבלות שמחכות לאישור</strong><span>לחץ על "סרוק חודש" כדי לראות דמו של מנגנון Gmail.</span></div></li>`;
+    : `<li><div class="receipt-meta"><strong>אין קבלות שמחכות לאישור</strong><span>חבר Gmail ואז לחץ "סרוק חודש".</span></div></li>`;
 }
 
 function renderChallenge() {
@@ -235,13 +244,6 @@ function addTransaction(type, amount, label = type === "expense" ? "הזנה מ�
   render();
 }
 
-function scanGmailDemo() {
-  state.connected = true;
-  const currentCurrencyReceipts = seedReceipts.filter((receipt) => receipt.currency === state.currency || receipt.currency === "ILS");
-  state.receipts = currentCurrencyReceipts.map((receipt) => ({ ...receipt, id: crypto.randomUUID() }));
-  render();
-}
-
 function parseSenders() {
   return (state.receiptSenders || "")
     .split(/[\n,;]/)
@@ -272,7 +274,7 @@ function initGmailTokenClient() {
   }
   gmailTokenClient = window.google.accounts.oauth2.initTokenClient({
     client_id: state.googleClientId,
-    scope: "https://www.googleapis.com/auth/gmail.readonly",
+    scope: gmailScope,
     callback: (response) => {
       if (response.error) {
         els.gmailStatus.textContent = `החיבור נכשל: ${response.error}`;
@@ -280,8 +282,8 @@ function initGmailTokenClient() {
       }
       gmailAccessToken = response.access_token;
       state.connected = true;
+      saveState();
       els.gmailStatus.textContent = "Gmail מחובר. עכשיו אפשר לסרוק את החודש.";
-      render();
     },
   });
   return gmailTokenClient;
@@ -305,7 +307,7 @@ async function scanGmailReal() {
     const tokenClient = initGmailTokenClient();
     if (!tokenClient) return;
     els.gmailStatus.textContent = "צריך להתחבר ל-Gmail לפני סריקה.";
-    tokenClient.requestAccessToken({ prompt: "" });
+    tokenClient.requestAccessToken({ prompt: "consent" });
     return;
   }
 
@@ -316,12 +318,12 @@ async function scanGmailReal() {
   }
 
   els.gmailStatus.textContent = "סורק את Gmail ומחפש קבלות מהחודש...";
-  document.querySelector("#scanBtn").disabled = true;
+  els.scanBtn.disabled = true;
 
   try {
     const messages = await listReceiptMessages(senders);
     const receipts = [];
-    for (const message of messages.slice(0, 20)) {
+    for (const message of messages.slice(0, 25)) {
       const full = await gmailFetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}?format=full`);
       const candidate = receiptFromMessage(full);
       if (candidate) receipts.push(candidate);
@@ -332,9 +334,9 @@ async function scanGmailReal() {
       : "לא מצאתי קבלות מתאימות בחודש הנוכחי.";
     render();
   } catch (error) {
-    els.gmailStatus.textContent = `סריקת Gmail נכשלה: ${error.message}`;
+    els.gmailStatus.textContent = `סריקת Gmail נכשלה: ${friendlyGmailError(error)}`;
   } finally {
-    document.querySelector("#scanBtn").disabled = false;
+    els.scanBtn.disabled = false;
   }
 }
 
@@ -351,13 +353,11 @@ async function listReceiptMessages(senders) {
 
 async function gmailFetch(url) {
   const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${gmailAccessToken}`,
-    },
+    headers: { Authorization: `Bearer ${gmailAccessToken}` },
   });
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || response.statusText);
+    const body = await response.text();
+    throw new Error(body || response.statusText);
   }
   return response.json();
 }
@@ -392,7 +392,8 @@ function decodeBase64Url(value) {
   try {
     const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
     const binary = atob(normalized);
-    return decodeURIComponent([...binary].map((char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""));
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder("utf-8").decode(bytes);
   } catch {
     return "";
   }
@@ -401,7 +402,7 @@ function decodeBase64Url(value) {
 function parseReceiptAmount(text) {
   const currency = detectCurrency(text);
   const patterns = [
-    /(?:total|amount|paid|payment|order total|grand total|סה"כ|סכום|שולם)[^\d]{0,28}([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
+    /(?:total|amount|paid|payment|order total|grand total|סה"כ|סכום|שולם)[^\d]{0,36}([0-9][0-9,]*(?:\.[0-9]{1,2})?)/i,
     /(?:₪|฿|\$|€)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/,
     /([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:₪|฿|USD|EUR|THB|ILS)/i,
   ];
@@ -427,6 +428,15 @@ function merchantName(sender, subject) {
   if (/lazada/i.test(value)) return "Lazada";
   if (/therapy|טיפול|מטפל|מטפלת/i.test(value)) return "טיפול רגשי";
   return sender.split("<")[0].trim() || "קבלה";
+}
+
+function friendlyGmailError(error) {
+  const message = error.message || "";
+  if (message.includes("insufficientPermissions")) return "ההרשאה לא כוללת קריאת Gmail. התחבר שוב ואשר gmail.readonly.";
+  if (message.includes("access_denied")) return "ההרשאה נדחתה בחלון Google.";
+  if (message.includes("invalid_client")) return "ה-Client ID לא תקין או שלא הוגדר לכתובת האתר הזו.";
+  if (message.includes("origin_mismatch")) return "צריך להוסיף את כתובת GitHub Pages ל-Authorized JavaScript origins.";
+  return message.slice(0, 220);
 }
 
 function approveReceipt(id) {
@@ -476,11 +486,11 @@ function showPushDemo() {
 
 document.querySelector("#incomeBtn").addEventListener("click", () => openCalc("income"));
 document.querySelector("#expenseBtn").addEventListener("click", () => openCalc("expense"));
-document.querySelector("#scanBtn").addEventListener("click", scanGmailReal);
-document.querySelector("#connectBtn").addEventListener("click", connectGmail);
+els.scanBtn.addEventListener("click", scanGmailReal);
+els.connectBtn.addEventListener("click", connectGmail);
 document.querySelector("#notifyBtn").addEventListener("click", showPushDemo);
 document.querySelector("#resetBtn").addEventListener("click", () => {
-  localStorage.removeItem("moda-budget-state");
+  localStorage.removeItem(storageKey);
   location.reload();
 });
 

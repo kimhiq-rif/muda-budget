@@ -1,4 +1,4 @@
-const CACHE_NAME = "moda-budget-v1";
+const CACHE_NAME = "moda-budget-v2";
 const ASSETS = [
   "./",
   "./index.html",
