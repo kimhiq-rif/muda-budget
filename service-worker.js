@@ -1,16 +1,21 @@
-const CACHE_NAME = "moda-budget-v3";
+const CACHE_NAME = "moda-budget-v4";
 const ASSETS = [
   "./",
-  "./index.html",
+  "./index.html?v=4",
+  "./reset.html",
   "./styles.css",
+  "./styles.css?v=4",
   "./app.js",
+  "./app.js?v=4",
   "./manifest.webmanifest",
+  "./service-worker.js",
   "./icons/icon-180.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
@@ -20,7 +25,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    )
+    ).then(() => self.clients.claim())
   );
 });
 
