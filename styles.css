@@ -73,6 +73,13 @@ textarea {
   font-weight: 800;
 }
 
+.build-mark {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 h1,
 h2,
 p {
@@ -415,6 +422,32 @@ circle {
   justify-content: space-between;
   gap: 14px;
   align-items: center;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.gmail-connect.engine-running {
+  border-color: rgba(24, 185, 133, 0.7);
+  background:
+    linear-gradient(90deg, rgba(142, 232, 198, 0.28), rgba(255, 255, 255, 0.88), rgba(142, 232, 198, 0.28)),
+    rgba(255, 255, 255, 0.82);
+  background-size: 220% 100%;
+  animation: engineSweep 1.2s ease-in-out infinite;
+}
+
+.gmail-connect.engine-running .connect-button,
+.gmail-connect.engine-running + .gmail-settings + .receipts,
+.text-button:disabled {
+  opacity: 0.72;
+}
+
+.gmail-connect.engine-done {
+  border-color: rgba(24, 185, 133, 0.75);
+  box-shadow: 0 0 0 3px rgba(142, 232, 198, 0.26);
+}
+
+.gmail-connect.engine-error {
+  border-color: rgba(255, 127, 142, 0.75);
+  box-shadow: 0 0 0 3px rgba(255, 127, 142, 0.16);
 }
 
 .gmail-settings {
@@ -661,6 +694,15 @@ circle {
   }
   to {
     box-shadow: 0 0 42px rgba(142, 232, 198, 0.85);
+  }
+}
+
+@keyframes engineSweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
   }
 }
 

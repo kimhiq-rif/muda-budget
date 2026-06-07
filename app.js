@@ -6,6 +6,7 @@ const currencies = {
 };
 
 const storageKey = "moda-budget-state";
+const appVersion = "v9";
 const photoDbName = "moda-receipt-photos";
 const photoStoreName = "photos";
 const twoYearsMs = 730 * 24 * 60 * 60 * 1000;
@@ -59,6 +60,16 @@ const els = {
   reportSources: document.querySelector("#reportSources"),
   reportAcknowledgeBtn: document.querySelector("#reportAcknowledgeBtn"),
 };
+
+function setGmailEngineState(status, text) {
+  const box = els.gmailStatus.closest(".gmail-connect");
+  box.classList.remove("engine-idle", "engine-running", "engine-done", "engine-error");
+  box.classList.add(`engine-${status}`);
+  els.gmailStatus.textContent = text;
+  if (status === "done") {
+    window.setTimeout(() => box.classList.remove("engine-done"), 2600);
+  }
+}
 
 function loadState() {
   const saved = localStorage.getItem(storageKey);
@@ -247,11 +258,11 @@ function renderGmailSettings() {
   els.googleClientId.value = state.googleClientId || "";
   els.senderInput.value = state.receiptSenders || "";
   if (gmailAccessToken) {
-    els.gmailStatus.textContent = "Gmail מחובר. אפשר לסרוק את החודש הנוכחי.";
+    setGmailEngineState("idle", "Gmail מחובר. אפשר לעדכן את החודש.");
   } else if (state.googleClientId) {
-    els.gmailStatus.textContent = "Client ID נשמר. לחץ חבר כדי לאשר גישה ל-Gmail.";
+    setGmailEngineState("idle", "Client ID נשמר. לחץ חבר כדי לאשר גישה ל-Gmail.");
   } else {
-    els.gmailStatus.textContent = "הכנס Client ID של Google, חבר Gmail, ואז סרוק את החודש הנוכחי.";
+    setGmailEngineState("idle", "הכנס Client ID של Google, חבר Gmail, ואז עדכן את החודש.");
   }
 }
 
@@ -547,15 +558,15 @@ function monthRangeQuery() {
 
 function initGmailTokenClient() {
   if (!state.googleClientId) {
-    els.gmailStatus.textContent = "חסר Google OAuth Client ID.";
+    setGmailEngineState("error", "חסר Google OAuth Client ID.");
     return null;
   }
   if (state.googleClientId.includes("@") || !state.googleClientId.endsWith(".apps.googleusercontent.com")) {
-    els.gmailStatus.textContent = "בשדה Client ID צריך להדביק OAuth Client ID מ-Google Cloud, לא כתובת Gmail.";
+    setGmailEngineState("error", "בשדה Client ID צריך להדביק OAuth Client ID מ-Google Cloud, לא כתובת Gmail.");
     return null;
   }
   if (!window.google?.accounts?.oauth2) {
-    els.gmailStatus.textContent = "ספריית Google עדיין נטענת. נסה שוב בעוד רגע.";
+    setGmailEngineState("error", "ספריית Google עדיין נטענת. נסה שוב בעוד רגע.");
     return null;
   }
   gmailTokenClient = window.google.accounts.oauth2.initTokenClient({
@@ -563,13 +574,13 @@ function initGmailTokenClient() {
     scope: gmailScope,
     callback: (response) => {
       if (response.error) {
-        els.gmailStatus.textContent = `החיבור נכשל: ${response.error}`;
+        setGmailEngineState("error", `החיבור נכשל: ${response.error}`);
         return;
       }
       gmailAccessToken = response.access_token;
       state.connected = true;
       saveState();
-      els.gmailStatus.textContent = "Gmail מחובר. עכשיו אפשר לסרוק את החודש.";
+      setGmailEngineState("done", "Gmail מחובר. המנוע מתחיל לעדכן.");
       scanGmailReal();
     },
   });
@@ -593,19 +604,20 @@ async function scanGmailReal() {
   if (!gmailAccessToken) {
     const tokenClient = initGmailTokenClient();
     if (!tokenClient) return;
-    els.gmailStatus.textContent = "צריך להתחבר ל-Gmail לפני סריקה.";
+    setGmailEngineState("error", "צריך להתחבר ל-Gmail לפני עדכון.");
     tokenClient.requestAccessToken({ prompt: "consent" });
     return;
   }
 
   const senders = parseSenders();
   if (!senders.length) {
-    els.gmailStatus.textContent = "צריך להזין לפחות כתובת מייל אחת של קבלות.";
+    setGmailEngineState("error", "צריך להזין לפחות כתובת מייל אחת של קבלות.");
     return;
   }
 
-  els.gmailStatus.textContent = "סורק את Gmail ומעדכן הוצאות...";
+  setGmailEngineState("running", "המנוע עובד. סורק Gmail ומעדכן הוצאות...");
   els.scanBtn.disabled = true;
+  els.scanBtn.textContent = "עובד...";
 
   try {
     const messages = await listReceiptMessages(senders);
@@ -625,14 +637,15 @@ async function scanGmailReal() {
       }
     }
     state.receipts = [];
-    els.gmailStatus.textContent = imported.length
+    setGmailEngineState("done", imported.length
       ? `נוספו ${imported.length} הוצאות מ-Gmail.`
-      : "אין הוצאות חדשות מ-Gmail.";
+      : "הסריקה הסתיימה. אין הוצאות חדשות.");
     render();
   } catch (error) {
-    els.gmailStatus.textContent = `סריקת Gmail נכשלה: ${friendlyGmailError(error)}`;
+    setGmailEngineState("error", `סריקת Gmail נכשלה: ${friendlyGmailError(error)}`);
   } finally {
     els.scanBtn.disabled = false;
+    els.scanBtn.textContent = "עדכן חודש";
   }
 }
 
